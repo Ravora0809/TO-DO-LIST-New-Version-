@@ -1,28 +1,30 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import appLogo from '../../assets/images/app_logo_1789532070520.jpg';
 import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  Clock,
-  CheckCircle2,
-  Circle,
   Calendar as CalendarIcon,
   Sparkles,
   Filter,
-  Flame,
-  ChevronDown,
-  Info,
   Check,
-  Search,
   X,
+  Globe,
+  RefreshCw,
+  MapPin,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
 import { Task, CalendarViewMode, Priority } from '../../types';
+import { HolidayEvent, HolidayType } from '../../services/holidays';
 import {
-  HolidayEvent,
-  HolidayType,
-  getAllHolidaysForYear,
-  getUpcomingHolidays,
-} from '../../services/holidays';
+  CountryInfo,
+  SUPPORTED_COUNTRIES,
+  detectUserCountry,
+  saveUserCountry,
+  getUnifiedHolidays,
+  filterUpcoming,
+} from '../../services/holidaysApi';
 import { HolidayModal } from '../HolidayModal';
 
 interface CalendarViewProps {
@@ -53,7 +55,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
-  // Festival & Important Dates states
+  // User location and Public Holidays API state
+  const [userCountry, setUserCountry] = useState<CountryInfo>(() => detectUserCountry());
+  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [isLoadingApi, setIsLoadingApi] = useState(false);
+  const [isLiveApiConnected, setIsLiveApiConnected] = useState(true);
+  const [lastSyncedTime, setLastSyncedTime] = useState<Date>(new Date());
+
+  // Holiday data state
+  const [unifiedHolidays, setUnifiedHolidays] = useState<HolidayEvent[]>([]);
   const [showHolidays, setShowHolidays] = useState(true);
   const [holidayFilter, setHolidayFilter] = useState<HolidayType | 'all'>('all');
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
@@ -62,18 +73,51 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
 
   const todayStr = useMemo(() => formatDate(new Date()), []);
-
-  // Compute holidays for current view year & adjacent years
   const currentYear = currentDate.getFullYear();
-  const yearHolidays = useMemo(() => {
-    return getAllHolidaysForYear(currentYear);
-  }, [currentYear]);
+
+  // Fetch holidays whenever year or country changes
+  const loadHolidays = useCallback(
+    async (year: number, countryCode: string, forceRefresh = false) => {
+      setIsLoadingApi(true);
+      if (forceRefresh) {
+        try {
+          localStorage.removeItem(`publicholidays_api_${countryCode}_${year}`);
+        } catch {
+          // ignore
+        }
+      }
+
+      try {
+        const result = await getUnifiedHolidays(year, countryCode);
+        setUnifiedHolidays(result.holidays);
+        setIsLiveApiConnected(result.isLiveApi);
+        setLastSyncedTime(result.lastSynced);
+      } catch (err) {
+        console.error('Failed to load unified holidays:', err);
+      } finally {
+        setIsLoadingApi(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    loadHolidays(currentYear, userCountry.code);
+  }, [currentYear, userCountry.code, loadHolidays]);
+
+  // Handle Country Selection
+  const handleSelectCountry = (country: CountryInfo) => {
+    setUserCountry(country);
+    saveUserCountry(country.code);
+    setIsCountryDropdownOpen(false);
+    setCountrySearch('');
+  };
 
   // Map of dateStr -> HolidayEvent[]
   const holidaysMap = useMemo(() => {
     const map = new Map<string, HolidayEvent[]>();
-    for (const h of yearHolidays) {
-      // Apply type filter
+    for (const h of unifiedHolidays) {
+      // Apply category filter
       if (holidayFilter !== 'all' && h.type !== holidayFilter) {
         continue;
       }
@@ -94,18 +138,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       map.set(h.date, existing);
     }
     return map;
-  }, [yearHolidays, holidayFilter, searchQuery]);
+  }, [unifiedHolidays, holidayFilter, searchQuery]);
 
-  // Current month's festival count for badge
+  // Month holiday count for badge
   const monthHolidaysCount = useMemo(() => {
     const prefix = `${currentYear}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
-    return yearHolidays.filter((h) => h.date.startsWith(prefix)).length;
-  }, [yearHolidays, currentYear, currentDate]);
+    return unifiedHolidays.filter((h) => h.date.startsWith(prefix)).length;
+  }, [unifiedHolidays, currentYear, currentDate]);
 
-  // Upcoming festivals list (starting from currentDate or today)
+  // Upcoming festivals & public holidays based on current date
   const upcomingHolidays = useMemo(() => {
-    return getUpcomingHolidays(todayStr, 8);
-  }, [todayStr]);
+    const baseDate = formatDate(currentDate) < todayStr ? formatDate(currentDate) : todayStr;
+    return filterUpcoming(unifiedHolidays, baseDate, 10);
+  }, [unifiedHolidays, currentDate, todayStr]);
+
+  // Filtered country list for picker
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return SUPPORTED_COUNTRIES;
+    const q = countrySearch.toLowerCase();
+    return SUPPORTED_COUNTRIES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
+    );
+  }, [countrySearch]);
 
   // Navigation handlers
   const handlePrev = () => {
@@ -225,7 +279,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const handleAddHolidayToSchedule = (h: HolidayEvent) => {
     if (onAddHolidayAsTask) {
       onAddHolidayAsTask(
-        `${h.emoji} Celebrate ${h.name}`,
+        `${h.emoji} ${h.name}`,
         h.date,
         `${h.categoryName} • ${h.description} ${h.traditions ? '\nTraditions: ' + h.traditions : ''}`
       );
@@ -242,11 +296,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto select-none">
-      {/* Calendar Header Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 shadow-xs">
-        {/* Navigation buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5">
+      {/* Calendar Top Control Header */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 shadow-xs">
+        {/* Brand Logo & Navigation */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Logo with clean styling */}
+          <div className="flex items-center gap-2.5">
+            <img
+              src={appLogo}
+              alt="Calendar Suite Logo"
+              className="w-10 h-10 rounded-xl object-cover shadow-2xs border border-neutral-200/70 dark:border-neutral-700/70"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+
+          {/* Prev / Today / Next */}
+          <div className="flex items-center gap-1">
             <button
               onClick={handlePrev}
               className="p-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
@@ -269,21 +334,112 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </button>
           </div>
 
-          <span className="ml-2 text-base sm:text-lg font-bold text-neutral-900 dark:text-white">
+          {/* Current Month & Year Display */}
+          <span className="text-base sm:text-lg font-bold text-neutral-900 dark:text-white">
             {currentDate.toLocaleDateString([], { month: 'long', year: 'numeric' })}
           </span>
 
           {/* Month Festival Count Badge */}
           {showHolidays && (
-            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50">
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50">
               <Sparkles className="w-3 h-3 text-amber-500" />
-              <span>{monthHolidaysCount} {monthHolidaysCount === 1 ? 'festival' : 'festivals & dates'}</span>
+              <span>
+                {monthHolidaysCount} {monthHolidaysCount === 1 ? 'festival & holiday' : 'festivals & holidays'}
+              </span>
             </span>
           )}
         </div>
 
-        {/* Action Controls: Festival Toggles, View Modes & Add */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Location & Public Holidays API Selector + View Controls */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Public Holidays API Location Selector */}
+          <div className="relative">
+            <button
+              onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-xs font-medium text-neutral-800 dark:text-neutral-200 transition cursor-pointer shadow-2xs"
+              title="Change country for public holidays API"
+            >
+              <span className="text-base">{userCountry.flag}</span>
+              <span className="font-semibold">{userCountry.name}</span>
+              <span className="text-[10px] text-neutral-400 font-mono">({userCountry.code})</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="Public Holidays API Active" />
+            </button>
+
+            {/* Country Dropdown Picker */}
+            {isCountryDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setIsCountryDropdownOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-72 z-40 p-2.5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 shadow-xl space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="text-[11px] font-bold text-neutral-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Public Holidays Location</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-400">Live API</span>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={countrySearch}
+                    onChange={(e) => setCountrySearch(e.target.value)}
+                    placeholder="Search country..."
+                    className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    autoFocus
+                  />
+
+                  <div className="max-h-56 overflow-y-auto space-y-0.5">
+                    {filteredCountries.map((c) => (
+                      <button
+                        key={c.code}
+                        onClick={() => handleSelectCountry(c)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs text-left transition cursor-pointer ${
+                          userCountry.code === c.code
+                            ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 font-semibold'
+                            : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{c.flag}</span>
+                          <span>{c.name}</span>
+                        </div>
+                        {userCountry.code === c.code && (
+                          <Check className="w-3.5 h-3.5 text-amber-500" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800 text-[10px] text-neutral-400 flex items-center justify-between px-1">
+                    <span>Powered by Public Holidays API</span>
+                    <button
+                      onClick={() => {
+                        loadHolidays(currentYear, userCountry.code, true);
+                        setIsCountryDropdownOpen(false);
+                      }}
+                      className="text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Sync Now</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Sync Button */}
+          <button
+            onClick={() => loadHolidays(currentYear, userCountry.code, true)}
+            disabled={isLoadingApi}
+            className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
+            title="Refresh public holidays and festivals from API"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingApi ? 'animate-spin text-amber-500' : ''}`} />
+          </button>
+
           {/* Festivals & Holidays Toggle & Filter */}
           <div className="relative">
             <div className="flex items-center rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-800/40 p-0.5">
@@ -297,7 +453,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 title="Toggle Festivals & Important Dates on calendar"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Festivals & Dates</span>
+                <span>Holidays & Festivals</span>
               </button>
 
               {showHolidays && (
@@ -308,7 +464,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       ? 'text-amber-600 dark:text-amber-400 font-bold'
                       : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
                   }`}
-                  title="Filter festival categories"
+                  title="Filter categories"
                 >
                   <Filter className="w-3.5 h-3.5" />
                 </button>
@@ -328,8 +484,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   </div>
                   {[
                     { id: 'all', label: 'All Dates & Festivals', icon: '✨' },
+                    { id: 'national', label: `${userCountry.name} Public Holidays`, icon: userCountry.flag },
                     { id: 'festival', label: 'Festivals & Celebrations', icon: '🎉' },
-                    { id: 'national', label: 'National & Federal Holidays', icon: '🏛️' },
                     { id: 'cultural', label: 'Cultural Traditions', icon: '🏮' },
                     { id: 'observance', label: 'Global Observances', icon: '🌍' },
                   ].map((item) => (
@@ -385,19 +541,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </div>
 
-      {/* UPCOMING FESTIVALS & IMPORTANT DATES RIBBON */}
+      {/* UPCOMING FESTIVALS & PUBLIC HOLIDAYS RIBBON */}
       {showHolidays && showUpcomingRibbon && (
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-rose-500/5 to-purple-500/10 dark:from-amber-950/30 dark:via-rose-950/20 dark:to-purple-950/30 border border-amber-200/60 dark:border-amber-800/40 shadow-2xs">
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-emerald-500/5 to-purple-500/10 dark:from-amber-950/30 dark:via-emerald-950/20 dark:to-purple-950/30 border border-amber-200/60 dark:border-amber-800/40 shadow-2xs">
           <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300">
                 <Sparkles className="w-3.5 h-3.5" />
               </span>
               <h4 className="text-xs font-bold text-neutral-900 dark:text-white uppercase tracking-wider">
-                Upcoming Festivals & Important Dates
+                Upcoming Festivals & Public Holidays for {userCountry.flag} {userCountry.name}
               </h4>
               <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                Click any festival to view lore or add to schedule
+                Fetched live via Public Holidays API • Click any card for traditions or to add to your schedule
               </span>
             </div>
 
@@ -418,6 +574,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               const dayStrFormatted = eventD.toLocaleDateString([], { month: 'short', day: 'numeric' });
               const isToday = h.date === todayStr;
 
+              // Calculate days away
+              const todayD = new Date();
+              todayD.setHours(0, 0, 0, 0);
+              const diffDays = Math.ceil((eventD.getTime() - todayD.getTime()) / (1000 * 60 * 60 * 24));
+              const relativeBadge =
+                diffDays === 0
+                  ? 'Today!'
+                  : diffDays === 1
+                  ? 'Tomorrow'
+                  : diffDays < 0
+                  ? `${Math.abs(diffDays)}d ago`
+                  : `In ${diffDays} days`;
+
               return (
                 <button
                   key={h.id}
@@ -428,7 +597,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {h.emoji}
                   </span>
                   <div className="min-w-0">
-                    <div className="text-xs font-bold text-neutral-900 dark:text-white truncate max-w-[130px]">
+                    <div className="text-xs font-bold text-neutral-900 dark:text-white truncate max-w-[140px]">
                       {h.name}
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
@@ -436,7 +605,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {isToday ? 'Today!' : dayStrFormatted}
                       </span>
                       <span>•</span>
-                      <span className="truncate max-w-[80px]">{h.categoryName}</span>
+                      <span className="px-1.5 py-0.2 rounded bg-neutral-100 dark:bg-neutral-800 text-[9px] font-medium text-neutral-600 dark:text-neutral-300">
+                        {relativeBadge}
+                      </span>
                     </div>
                   </div>
                 </button>
@@ -487,11 +658,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {date.getDate()}
                       </span>
 
-                      {/* Small holiday dot indicator if current month */}
+                      {/* Small holiday dot indicator */}
                       {hasHoliday && (
                         <span
                           className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"
-                          title="Festival / Important date on this day"
+                          title="Public holiday or festival on this date"
                         />
                       )}
                     </div>
@@ -508,17 +679,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     </button>
                   </div>
 
-                  {/* Festivals & Holidays Badges in Date Cell */}
+                  {/* Festivals & Public Holidays Badges in Date Cell */}
                   {hasHoliday && (
                     <div className="space-y-1 mb-1.5">
                       {dayHolidays.slice(0, 2).map((h) => {
-                        const theme = h.color || {
-                          bg: 'bg-amber-50 dark:bg-amber-950/40',
-                          text: 'text-amber-900 dark:text-amber-200',
-                          border: 'border-amber-200 dark:border-amber-800/50',
-                          pill: 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800',
-                        };
-
                         return (
                           <div
                             key={h.id}
@@ -527,7 +691,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               setSelectedHoliday(h);
                             }}
                             className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1 truncate cursor-pointer transition shadow-2xs hover:shadow-xs border ${
-                              theme.pill || 'bg-amber-100 text-amber-900 border-amber-300'
+                              h.type === 'national'
+                                ? 'bg-emerald-50 text-emerald-900 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-800'
+                                : 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800'
                             }`}
                             title={`${h.emoji} ${h.name} (${h.categoryName}) - Click for details`}
                           >
@@ -545,7 +711,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           }}
                           className="text-[9px] font-bold text-amber-700 dark:text-amber-300 hover:underline px-1"
                         >
-                          +{dayHolidays.length - 2} more festival
+                          +{dayHolidays.length - 2} more
                         </div>
                       )}
                     </div>
@@ -610,7 +776,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               })}
             </div>
 
-            {/* Week All-Day Festival / Holiday Row */}
+            {/* Week All-Day Festival / Public Holiday Row */}
             {showHolidays && (
               <div className="grid grid-cols-7 border-b border-neutral-200 dark:border-neutral-800 bg-amber-50/30 dark:bg-amber-950/20 divide-x divide-neutral-100 dark:divide-neutral-800">
                 {weekDays.map((wd) => {
@@ -628,8 +794,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             e.stopPropagation();
                             setSelectedHoliday(h);
                           }}
-                          className="px-1.5 py-1 rounded-lg text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700/60 flex items-center gap-1 truncate cursor-pointer hover:shadow-xs transition"
-                          title={`${h.name} - Click for traditions & details`}
+                          className={`px-1.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 truncate cursor-pointer hover:shadow-xs transition border ${
+                            h.type === 'national'
+                              ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 border-emerald-300 dark:border-emerald-700'
+                              : 'bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700/60'
+                          }`}
+                          title={`${h.name} - Click for details`}
                         >
                           <span className="text-xs">{h.emoji}</span>
                           <span className="truncate">{h.name}</span>
@@ -712,7 +882,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </button>
           </div>
 
-          {/* Day Festive Banner if Today has Festivals */}
+          {/* Day Festive & Public Holiday Banner if Current Day has any */}
           {showHolidays && (
             (() => {
               const dayStr = formatDate(currentDate);
@@ -724,7 +894,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   {dayHolidays.map((h) => (
                     <div
                       key={h.id}
-                      className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-rose-950/20 dark:to-amber-950/30 border border-amber-300/80 dark:border-amber-800/70 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                      className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-amber-500/10 dark:from-amber-950/40 dark:via-emerald-950/20 dark:to-amber-950/30 border border-amber-300/80 dark:border-amber-800/70 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
                     >
                       <div className="flex items-start gap-3">
                         <span className="text-3xl select-none">{h.emoji}</span>
@@ -811,7 +981,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-sm">{task.title}</span>
-                          <span className="font-mono text-[11px] opacity-80">{task.startTime} {task.endTime ? `– ${task.endTime}` : ''}</span>
+                          <span className="font-mono text-[11px] opacity-80">
+                            {task.startTime} {task.endTime ? `– ${task.endTime}` : ''}
+                          </span>
                         </div>
                         {task.description && (
                           <p className="text-[11px] opacity-75 mt-0.5 line-clamp-1">{task.description}</p>

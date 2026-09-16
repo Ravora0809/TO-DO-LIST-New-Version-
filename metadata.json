@@ -1,6 +1,10 @@
 {
   "name": "Personal Productivity Suite",
   "description": "Modern personal productivity workspace combining Todo List, Calendar, Time Planner, and Sticky Notes.",
-  "requestFramePermissions": ["microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import appLogo from '../assets/images/app_logo_1789532070520.jpg';
 import {
   Search,
   Plus,
@@ -54,13 +55,21 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="h-16 border-b border-neutral-200/80 dark:border-neutral-800/80 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-md px-4 sm:px-8 flex items-center justify-between sticky top-0 z-10 select-none">
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white leading-tight">
-          {currentMeta.title}
-        </h1>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 hidden sm:block">
-          {currentMeta.subtitle}
-        </p>
+      <div className="flex items-center gap-2.5">
+        <img
+          src={appLogo}
+          alt="Productivity Suite Logo"
+          className="w-8 h-8 rounded-xl object-cover shadow-2xs md:hidden border border-neutral-200/70 dark:border-neutral-700/70"
+          referrerPolicy="no-referrer"
+        />
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white leading-tight">
+            {currentMeta.title}
+          </h1>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 hidden sm:block">
+            {currentMeta.subtitle}
+          </p>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">

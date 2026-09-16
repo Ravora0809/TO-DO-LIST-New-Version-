@@ -1,4 +1,5 @@
 import React from 'react';
+import appLogo from '../assets/images/app_logo_1789532070520.jpg';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -48,9 +49,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Brand */}
       <div className="h-16 px-6 flex items-center justify-between border-b border-neutral-100 dark:border-neutral-800/80">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-neutral-900 text-white dark:bg-white dark:text-neutral-950 flex items-center justify-center font-bold text-sm shadow-sm">
-            <Sparkles className="w-4 h-4" />
-          </div>
+          <img
+            src={appLogo}
+            alt="Productivity Suite Logo"
+            className="w-9 h-9 rounded-xl object-cover shadow-sm border border-neutral-200/60 dark:border-neutral-700/60"
+            referrerPolicy="no-referrer"
+          />
           <div className="leading-tight">
             <div className="font-semibold text-sm tracking-tight text-neutral-900 dark:text-white">
               Productivity
