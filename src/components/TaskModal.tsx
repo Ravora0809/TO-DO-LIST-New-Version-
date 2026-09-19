@@ -13,6 +13,9 @@ import {
   Plus,
   Trash2,
   AlertCircle,
+  Timer,
+  Play,
+  Volume2,
 } from 'lucide-react';
 import { Task, Priority, Subtask, ReminderConfig, RecurringConfig } from '../types';
 import { parseNaturalTaskInput } from '../services/nlp';
@@ -25,6 +28,7 @@ interface TaskModalProps {
   initialTime?: string;
   onSave: (taskData: Omit<Task, 'id' | 'order' | 'createdAt'> & { id?: string }) => void;
   onDelete?: (id: string) => void;
+  onStartStopwatch?: (task: Task) => void;
 }
 
 const CATEGORIES = ['Work', 'Personal', 'Study', 'Health', 'Finance'];
@@ -37,6 +41,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   initialTime,
   onSave,
   onDelete,
+  onStartStopwatch,
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -386,6 +391,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   <span className="text-xs text-neutral-500">minutes before</span>
                 </div>
               )}
+
+              {reminderType !== 'none' && (
+                <div className="mt-2 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-[11px] text-amber-800 dark:text-amber-200">
+                  <Volume2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Ravora will read this reminder out loud with natural voice</span>
+                </div>
+              )}
             </div>
 
             {/* Recurring */}
@@ -525,6 +537,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             )}
 
             <div className="flex items-center gap-2">
+              {taskToEdit && !taskToEdit.completed && onStartStopwatch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onStartStopwatch(taskToEdit);
+                  }}
+                  className="px-3 py-2 text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current text-amber-600 dark:text-amber-400" />
+                  <span>Start Focus</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}

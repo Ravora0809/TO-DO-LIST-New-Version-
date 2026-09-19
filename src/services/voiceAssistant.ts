@@ -19,7 +19,13 @@ export function isSpeechSynthesisSupported(): boolean {
 let activeUtterance: SpeechSynthesisUtterance | null = null;
 
 // Speak text using Web Speech API Synthesis
-export function speakText(text: string, muted = false, onEnd?: () => void): void {
+export function speakText(
+  text: string,
+  muted = false,
+  onEnd?: () => void,
+  rate = 1.05,
+  onStart?: () => void
+): void {
   if (muted || !isSpeechSynthesisSupported()) {
     onEnd?.();
     return;
@@ -35,7 +41,15 @@ export function speakText(text: string, muted = false, onEnd?: () => void): void
     const voices = window.speechSynthesis.getVoices();
     const preferredVoice = voices.find(
       (v) =>
-        (v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Karen') || v.name.includes('Zira') || v.name.includes('Ava'))) ||
+        (v.lang.startsWith('en') &&
+          (v.name.includes('Natural') ||
+            v.name.includes('Google') ||
+            v.name.includes('Samantha') ||
+            v.name.includes('Karen') ||
+            v.name.includes('Zira') ||
+            v.name.includes('Ava') ||
+            v.name.includes('Daniel') ||
+            v.name.includes('Alex'))) ||
         v.lang === 'en-US' ||
         v.lang === 'en-GB'
     );
@@ -43,9 +57,13 @@ export function speakText(text: string, muted = false, onEnd?: () => void): void
       utterance.voice = preferredVoice;
     }
 
-    utterance.rate = 1.05;
+    utterance.rate = rate;
     utterance.pitch = 1.02;
-    utterance.volume = 0.95;
+    utterance.volume = 0.98;
+
+    utterance.onstart = () => {
+      onStart?.();
+    };
 
     utterance.onend = () => {
       activeUtterance = null;
@@ -62,6 +80,11 @@ export function speakText(text: string, muted = false, onEnd?: () => void): void
     console.warn('SpeechSynthesis error:', e);
     onEnd?.();
   }
+}
+
+export function isSpeaking(): boolean {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+  return window.speechSynthesis.speaking;
 }
 
 export function stopSpeaking(): void {

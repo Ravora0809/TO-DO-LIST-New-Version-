@@ -1,12 +1,39 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Filter benign Vite dev WebSocket connection messages in sandboxed dev container
+      (function() {
+        const origConsoleError = console.error;
+        console.error = function(...args) {
+          const msg = typeof args[0] === 'string' ? args[0] : '';
+          if (
+            msg.includes('[vite] failed to connect to websocket') ||
+            msg.includes('[vite] server connection lost') ||
+            msg.includes('vite-plugin-pwa:dev-ready')
+          ) {
+            console.debug(...args);
+            return;
+          }
+          origConsoleError.apply(console, args);
+        };
+      })();
+    </script>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Personal Productivity Suite</title>
-    <meta name="description" content="Modern personal productivity workspace combining Todo List, Calendar, Time Planner, and Sticky Notes." />
+    <meta name="description" content="Comprehensive productivity workspace featuring a Target Goals roadmap with sequential step timing, active progress beacon indicating where you completed up to, embedded goal sticky notes, work rules compliance, task stopwatch with pre-completion alerts & alarm, day-by-day history, and ideation whiteboard." />
+    <meta name="theme-color" content="#18181b" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Productivity" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
     <meta property="og:title" content="Personal Productivity Suite" />
-    <meta property="og:description" content="Modern personal productivity workspace combining Todo List, Calendar, Time Planner, and Sticky Notes." />
+    <meta property="og:description" content="Comprehensive productivity workspace featuring a Target Goals roadmap with sequential step timing, active progress beacon indicating where you completed up to, embedded goal sticky notes, work rules compliance, task stopwatch with pre-completion alerts & alarm, day-by-day history, and ideation whiteboard." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
   </head>

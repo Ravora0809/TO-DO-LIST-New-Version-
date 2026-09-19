@@ -7,7 +7,7 @@ const SETTINGS_KEY = 'productivity_settings_v2';
 export const DEFAULT_SETTINGS: UserSettings = {
   theme: 'system',
   soundEnabled: true,
-  notificationsEnabled: false,
+  notificationsEnabled: true,
   defaultPriority: 'medium',
   defaultCategory: 'Work',
   startHour: 8,
@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   voiceAssistantEnabled: true,
   voiceMuted: false,
   autoGreetOnOpen: true,
+  readOutLoudReminders: true,
+  spokenReminderVoiceSpeed: 1.0,
 };
 
 // Pure neutral clean zero initialization - no dummy/sample tasks or notes
@@ -101,6 +103,8 @@ export function loadSettings(): UserSettings {
       voiceAssistantEnabled: parsed.voiceAssistantEnabled !== undefined ? parsed.voiceAssistantEnabled : true,
       voiceMuted: parsed.voiceMuted !== undefined ? parsed.voiceMuted : false,
       autoGreetOnOpen: parsed.autoGreetOnOpen !== undefined ? parsed.autoGreetOnOpen : true,
+      readOutLoudReminders: parsed.readOutLoudReminders !== undefined ? parsed.readOutLoudReminders : true,
+      spokenReminderVoiceSpeed: parsed.spokenReminderVoiceSpeed || 1.0,
     };
     return merged;
   } catch (e) {

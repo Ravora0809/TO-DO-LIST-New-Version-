@@ -13,6 +13,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { ViewType, ThemeMode } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   currentView: ViewType;
@@ -26,6 +27,8 @@ interface HeaderProps {
   voiceMuted: boolean;
   onToggleVoiceMute: () => void;
   onOpenVoiceAssistant: () => void;
+  onOpenReminders?: () => void;
+  pendingRemindersCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -40,13 +43,19 @@ export const Header: React.FC<HeaderProps> = ({
   voiceMuted,
   onToggleVoiceMute,
   onOpenVoiceAssistant,
+  onOpenReminders,
+  pendingRemindersCount = 0,
 }) => {
   const titles: Record<ViewType, { title: string; subtitle: string }> = {
     dashboard: { title: 'Dashboard', subtitle: 'Overview of your daily focus and schedule' },
     tasks: { title: 'Tasks', subtitle: 'Organize, prioritize, and check off items' },
+    targets: { title: 'Target Goals & Milestones', subtitle: 'Step-by-step progress tracking, timing deadlines, and goal sticky notes' },
+    rules: { title: 'Work Rules & Standards', subtitle: 'Discipline protocols, daily compliance, and work principles' },
     calendar: { title: 'Calendar', subtitle: 'Schedule & visualize upcoming tasks and events' },
     planner: { title: 'Time Planner', subtitle: 'Structure your day hour by hour' },
     notes: { title: 'Sticky Notes', subtitle: 'Capture quick ideas, reminders, and thoughts' },
+    whiteboard: { title: 'Ideation Whiteboard', subtitle: 'Design systems, UI flows, and architectures with shapes & icons' },
+    ideaplanner: { title: 'Idea Planner & Bug Notes', subtitle: 'Track progress from SRS to prototype with root-cause bug notes' },
     productivity: { title: 'Productivity', subtitle: 'Insights, streaks, and completion analytics' },
     settings: { title: 'Settings', subtitle: 'Preferences, notifications, and data management' },
   };
@@ -86,6 +95,9 @@ export const Header: React.FC<HeaderProps> = ({
           </kbd>
         </button>
 
+        {/* PWA Mobile App Install Button */}
+        <PWAInstallButton variant="header" />
+
         {/* Quick Add Task */}
         <button
           onClick={onOpenNewTask}
@@ -121,18 +133,40 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {/* Notification Permission Bell */}
+        {/* Reminders & Notification Popup Trigger */}
         <button
-          onClick={onRequestNotifications}
+          onClick={() => {
+            if (!notificationsEnabled) {
+              onRequestNotifications();
+            }
+            if (onOpenReminders) {
+              onOpenReminders();
+            }
+          }}
           id="header-notification-btn"
-          title={notificationsEnabled ? 'Reminders Active' : 'Enable Reminders'}
-          className={`p-2 rounded-xl border text-xs transition cursor-pointer ${
-            notificationsEnabled
-              ? 'border-neutral-200 dark:border-neutral-800 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20'
+          title={
+            pendingRemindersCount > 0
+              ? `${pendingRemindersCount} pending reminders (Click to view and read aloud)`
+              : notificationsEnabled
+              ? 'View reminders and readout'
+              : 'Enable Reminders'
+          }
+          className={`relative p-2 rounded-xl border text-xs transition cursor-pointer ${
+            notificationsEnabled || pendingRemindersCount > 0
+              ? 'border-amber-300 dark:border-amber-800 text-amber-600 dark:text-amber-400 bg-amber-50/70 dark:bg-amber-950/30'
               : 'border-neutral-200 dark:border-neutral-800 text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800'
           }`}
         >
-          {notificationsEnabled ? <BellRing className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+          {notificationsEnabled || pendingRemindersCount > 0 ? (
+            <BellRing className="w-4 h-4 animate-pulse" />
+          ) : (
+            <Bell className="w-4 h-4" />
+          )}
+          {pendingRemindersCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center shadow-xs">
+              {pendingRemindersCount > 9 ? '9+' : pendingRemindersCount}
+            </span>
+          )}
         </button>
 
         {/* Theme Toggle */}

@@ -17,9 +17,14 @@ import {
   Check,
   ChevronDown,
   Sparkles,
+  Timer,
+  Play,
+  History,
+  CheckSquare,
 } from 'lucide-react';
 import { Task, Priority, TaskFilterOptions } from '../../types';
 import { parseNaturalTaskInput } from '../../services/nlp';
+import { DayByDayHistoryView } from './DayByDayHistoryView';
 
 interface TasksViewProps {
   tasks: Task[];
@@ -29,6 +34,7 @@ interface TasksViewProps {
   onQuickAddTask: (title: string) => void;
   onReorderTasks: (reorderedTasks: Task[]) => void;
   onOpenNewTaskModal: () => void;
+  onStartStopwatch?: (task: Task) => void;
 }
 
 export const TasksView: React.FC<TasksViewProps> = ({
@@ -39,7 +45,9 @@ export const TasksView: React.FC<TasksViewProps> = ({
   onQuickAddTask,
   onReorderTasks,
   onOpenNewTaskModal,
+  onStartStopwatch,
 }) => {
+  const [viewMode, setViewMode] = useState<'tasks' | 'day_by_day_history'>('tasks');
   const [quickInput, setQuickInput] = useState('');
   const [filters, setFilters] = useState<TaskFilterOptions>({
     status: 'all',
@@ -181,8 +189,48 @@ export const TasksView: React.FC<TasksViewProps> = ({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
-      {/* Quick Add Bar */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 shadow-xs">
+      {/* View Mode Toggle: Tasks vs Day-by-Day History */}
+      <div className="flex items-center justify-between gap-4 pb-1">
+        <div className="flex items-center gap-1 p-1 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
+          <button
+            type="button"
+            onClick={() => setViewMode('tasks')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              viewMode === 'tasks'
+                ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+            }`}
+          >
+            <CheckSquare className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300" />
+            <span>Active Tasks</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('day_by_day_history')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              viewMode === 'day_by_day_history'
+                ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+            }`}
+          >
+            <History className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Day-by-Day History</span>
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'day_by_day_history' ? (
+        <DayByDayHistoryView
+          tasks={tasks}
+          onToggleTask={onToggleTask}
+          onEditTask={onEditTask}
+          onDeleteTask={onDeleteTask}
+          onNavigateToTasks={() => setViewMode('tasks')}
+        />
+      ) : (
+        <>
+          {/* Quick Add Bar */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 shadow-xs">
         <form onSubmit={handleQuickAddSubmit} className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
@@ -426,31 +474,57 @@ export const TasksView: React.FC<TasksViewProps> = ({
                         {task.subtasks.filter((s) => s.completed).length}/{task.subtasks.length} subtasks
                       </span>
                     )}
+
+                    {task.timeSpentSeconds && (
+                      <span className="flex items-center gap-1 font-mono font-semibold text-amber-600 dark:text-amber-400">
+                        <Timer className="w-3 h-3" />
+                        {Math.round(task.timeSpentSeconds / 60)}m focus
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Right Action buttons */}
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => onEditTask(task)}
-                  title="Edit"
-                  className="p-2 rounded-xl text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => onDeleteTask(task.id)}
-                  title="Delete"
-                  className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {!task.completed && onStartStopwatch && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStartStopwatch(task);
+                    }}
+                    title="Start Task Stopwatch"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-bold transition cursor-pointer border border-amber-500/20 shadow-xs"
+                  >
+                    <Play className="w-3 h-3 fill-current text-amber-600 dark:text-amber-400" />
+                    <span className="hidden sm:inline">Focus</span>
+                  </button>
+                )}
+
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => onEditTask(task)}
+                    title="Edit"
+                    className="p-2 rounded-xl text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => onDeleteTask(task.id)}
+                    title="Delete"
+                    className="p-2 rounded-xl text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

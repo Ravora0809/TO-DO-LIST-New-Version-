@@ -12,8 +12,13 @@ import {
   LogOut,
   Sparkles,
   Mic,
+  Palette,
+  FolderKanban,
+  BookOpen,
+  Target,
 } from 'lucide-react';
 import { ViewType } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SidebarProps {
   currentView: ViewType;
@@ -37,6 +42,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems: { id: ViewType; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, badge: pendingCount > 0 ? pendingCount : undefined },
+    { id: 'targets', label: 'Targets & Goals', icon: Target },
+    { id: 'rules', label: 'Rules', icon: BookOpen },
+    { id: 'whiteboard', label: 'Whiteboard', icon: Palette },
+    { id: 'ideaplanner', label: 'Idea & Bug Planner', icon: FolderKanban },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'planner', label: 'Planner', icon: Clock },
     { id: 'notes', label: 'Sticky Notes', icon: StickyNoteIcon },
@@ -110,6 +119,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
       </nav>
+
+      {/* Install Mobile App CTA */}
+      <div className="px-4 pb-2">
+        <PWAInstallButton variant="sidebar" />
+      </div>
 
       {/* Voice Assistant Trigger */}
       {onOpenVoiceAssistant && (

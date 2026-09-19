@@ -6,6 +6,7 @@ import {
   UserSettings,
   ViewType,
   ThemeMode,
+  ActiveStopwatchState,
 } from './types';
 import {
   loadTasks,
@@ -21,7 +22,24 @@ import {
 } from './services/storage';
 import { verifyAuth, logoutUser, getStoredUser } from './services/auth';
 import { parseNaturalTaskInput } from './services/nlp';
-import { playCompleteSound } from './services/sound';
+import {
+  playCompleteSound,
+  playWarningBeep,
+  playAlarmSound,
+  stopAlarmSound,
+  isAlarmRinging,
+} from './services/sound';
+import {
+  initBackgroundTickWorker,
+  calculateCurrentElapsedSeconds,
+  updateTabTitleWithTimer,
+  startAlarmTitleFlashing,
+  stopAlarmTitleFlashing,
+  triggerTimeUpNotification,
+  saveActiveStopwatch,
+  loadActiveStopwatch,
+} from './services/stopwatchTimer';
+import { speakText } from './services/voiceAssistant';
 import {
   requestNotificationPermission,
   checkTaskReminders,
@@ -35,9 +53,15 @@ import { Header } from './components/Header';
 import { CommandPalette } from './components/CommandPalette';
 import { TaskModal } from './components/TaskModal';
 import { StickyNoteModal } from './components/StickyNoteModal';
-import { InAppToast } from './components/InAppToast';
+import { NotificationBanner } from './components/NotificationBanner';
+import { RemindersPopup } from './components/RemindersPopup';
+import { MobileAppBanner } from './components/MobileAppBanner';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { VoiceGreetingModal } from './components/VoiceGreetingModal';
 import { VoiceAssistantWidget } from './components/VoiceAssistantWidget';
+import { TaskStopwatchBar } from './components/TaskStopwatchBar';
+import { TaskTimeUpModal } from './components/TaskTimeUpModal';
+import { StartTaskStopwatchModal } from './components/StartTaskStopwatchModal';
 import { VoiceAssistantAction } from './types';
 
 import { DashboardView } from './components/views/DashboardView';
@@ -47,6 +71,10 @@ import { PlannerView } from './components/views/PlannerView';
 import { StickyNotesView } from './components/views/StickyNotesView';
 import { ProductivityView } from './components/views/ProductivityView';
 import { SettingsView } from './components/views/SettingsView';
+import { WhiteboardView } from './components/views/WhiteboardView';
+import { IdeaPlannerView } from './components/views/IdeaPlannerView';
+import { RulesView } from './components/views/RulesView';
+import { TargetGoalsView } from './components/views/TargetGoalsView';
 
 export default function App() {
   // Authentication state
@@ -75,6 +103,22 @@ export default function App() {
   // Voice Assistant Modals & State
   const [isVoiceGreetingOpen, setIsVoiceGreetingOpen] = useState(false);
   const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState(false);
+  const [isRemindersPopupOpen, setIsRemindersPopupOpen] = useState(false);
+
+  // Task Stopwatch & Alarm States
+  const [activeStopwatch, setActiveStopwatch] = useState<ActiveStopwatchState | null>(() => {
+    return loadActiveStopwatch();
+  });
+  const [stopwatchTask, setStopwatchTask] = useState<Task | null>(null);
+  const [isStartStopwatchModalOpen, setIsStartStopwatchModalOpen] = useState(false);
+  const [isTimeUpModalOpen, setIsTimeUpModalOpen] = useState(false);
+  const [isAlarmPlaying, setIsAlarmPlaying] = useState(false);
+  const hasWarned60sRef = React.useRef<boolean>(false);
+
+  // Auto-persist active stopwatch to localStorage
+  useEffect(() => {
+    saveActiveStopwatch(activeStopwatch);
+  }, [activeStopwatch]);
 
   // Initialize data and check auth
   useEffect(() => {
@@ -156,10 +200,354 @@ export default function App() {
     }
   }, []);
 
+  // Persist active stopwatch state
+  useEffect(() => {
+    if (activeStopwatch) {
+      localStorage.setItem('ravora_active_stopwatch', JSON.stringify(activeStopwatch));
+    } else {
+      localStorage.removeItem('ravora_active_stopwatch');
+    }
+  }, [activeStopwatch]);
+
+  // Silence alarm handler
+  const handleSilenceAlarm = useCallback(() => {
+    stopAlarmSound();
+    stopAlarmTitleFlashing();
+    setIsAlarmPlaying(false);
+  }, []);
+
+  // Sync tab title with active timer or reset
+  useEffect(() => {
+    if (!isAlarmPlaying) {
+      updateTabTitleWithTimer(activeStopwatch, false);
+    }
+  }, [activeStopwatch, isAlarmPlaying]);
+
+  // Stopwatch ticking interval & alarm trigger with background worker & wall-clock accuracy
+  useEffect(() => {
+    if (!activeStopwatch || !activeStopwatch.isRunning) return;
+
+    const handleTick = () => {
+      setActiveStopwatch((prev) => {
+        if (!prev || !prev.isRunning) return prev;
+
+        const currentElapsed = calculateCurrentElapsedSeconds(prev, Date.now());
+
+        if (prev.mode === 'countdown') {
+          const remaining = prev.targetSeconds - currentElapsed;
+
+          // Warning beep + voice when 60 seconds remain
+          if (remaining <= 60 && remaining > 0 && !hasWarned60sRef.current) {
+            hasWarned60sRef.current = true;
+            playWarningBeep(settings.soundEnabled);
+            speakText(
+              `Attention: Your focus session for ${prev.taskTitle} is about to complete in one minute.`,
+              settings.voiceMuted
+            );
+          }
+
+          // Alarm when timer expires
+          if (remaining <= 0) {
+            playAlarmSound(settings.soundEnabled);
+            setIsAlarmPlaying(true);
+            startAlarmTitleFlashing(prev.taskTitle);
+            triggerTimeUpNotification(prev.taskTitle, prev.taskCategory);
+            speakText(
+              `Time is up for ${prev.taskTitle}! Please mark if your work is done or if you want to extend.`,
+              settings.voiceMuted
+            );
+            setIsTimeUpModalOpen(true);
+            return {
+              ...prev,
+              elapsedSeconds: prev.targetSeconds,
+              accumulatedSeconds: prev.targetSeconds,
+              isRunning: false,
+            };
+          }
+        } else {
+          // Open stopwatch: chime every 30 minutes
+          if (currentElapsed > 0 && currentElapsed % 1800 === 0 && currentElapsed !== prev.elapsedSeconds) {
+            playWarningBeep(settings.soundEnabled);
+            speakText(
+              `You have been focused on ${prev.taskTitle} for ${Math.round(currentElapsed / 60)} minutes.`,
+              settings.voiceMuted
+            );
+          }
+        }
+
+        return {
+          ...prev,
+          elapsedSeconds: currentElapsed,
+        };
+      });
+    };
+
+    // Immediate tick
+    handleTick();
+
+    // Start background tick worker (runs in separate thread, immune to background tab throttling)
+    const cleanupWorker = initBackgroundTickWorker(handleTick);
+
+    return () => {
+      cleanupWorker();
+    };
+  }, [
+    activeStopwatch?.isRunning,
+    activeStopwatch?.mode,
+    activeStopwatch?.targetSeconds,
+    settings.soundEnabled,
+    settings.voiceMuted,
+  ]);
+
+  // Synchronize stopwatch immediately on tab visibility change or window focus
+  useEffect(() => {
+    const handleSyncOnVisibility = () => {
+      if (!activeStopwatch || !activeStopwatch.isRunning) return;
+
+      const currentElapsed = calculateCurrentElapsedSeconds(activeStopwatch, Date.now());
+
+      if (activeStopwatch.mode === 'countdown') {
+        const remaining = activeStopwatch.targetSeconds - currentElapsed;
+        if (remaining <= 0) {
+          playAlarmSound(settings.soundEnabled);
+          setIsAlarmPlaying(true);
+          startAlarmTitleFlashing(activeStopwatch.taskTitle);
+          triggerTimeUpNotification(activeStopwatch.taskTitle, activeStopwatch.taskCategory);
+          speakText(
+            `Time is up for ${activeStopwatch.taskTitle}!`,
+            settings.voiceMuted
+          );
+          setIsTimeUpModalOpen(true);
+          setActiveStopwatch((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  elapsedSeconds: prev.targetSeconds,
+                  accumulatedSeconds: prev.targetSeconds,
+                  isRunning: false,
+                }
+              : null
+          );
+          return;
+        }
+      }
+
+      setActiveStopwatch((prev) =>
+        prev
+          ? {
+              ...prev,
+              elapsedSeconds: currentElapsed,
+            }
+          : null
+      );
+    };
+
+    document.addEventListener('visibilitychange', handleSyncOnVisibility);
+    window.addEventListener('focus', handleSyncOnVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSyncOnVisibility);
+      window.removeEventListener('focus', handleSyncOnVisibility);
+    };
+  }, [activeStopwatch, settings.soundEnabled, settings.voiceMuted]);
+
+  // Stopwatch Handlers
+  const handleOpenStartStopwatch = useCallback((task: Task) => {
+    setStopwatchTask(task);
+    setIsStartStopwatchModalOpen(true);
+  }, []);
+
+  const handleStartStopwatch = useCallback(
+    (task: Task, mode: 'countdown' | 'stopwatch', targetMinutes: number) => {
+      stopAlarmSound();
+      stopAlarmTitleFlashing();
+      setIsAlarmPlaying(false);
+      setIsTimeUpModalOpen(false);
+      hasWarned60sRef.current = false;
+
+      // Ask for notification permission if default so background alarm notification can fire
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+
+      const now = Date.now();
+      const newState: ActiveStopwatchState = {
+        taskId: task.id,
+        taskTitle: task.title,
+        taskCategory: task.category,
+        mode,
+        targetSeconds: mode === 'countdown' ? targetMinutes * 60 : 0,
+        elapsedSeconds: 0,
+        isRunning: true,
+        startedAt: new Date().toISOString(),
+        startTimestamp: now,
+        accumulatedSeconds: 0,
+        extendedTimes: 0,
+      };
+      setActiveStopwatch(newState);
+
+      if (settings.voiceAssistantEnabled) {
+        speakText(
+          `Focus timer started for ${task.title}. ${
+            mode === 'countdown' ? `${targetMinutes} minutes set.` : 'Stopwatch is running.'
+          } Good focus!`,
+          settings.voiceMuted
+        );
+      }
+    },
+    [settings.voiceAssistantEnabled, settings.voiceMuted]
+  );
+
+  const handleToggleStopwatchPause = useCallback(() => {
+    setActiveStopwatch((prev) => {
+      if (!prev) return null;
+      const now = Date.now();
+      if (prev.isRunning) {
+        // Pausing
+        const currentElapsed = calculateCurrentElapsedSeconds(prev, now);
+        return {
+          ...prev,
+          isRunning: false,
+          elapsedSeconds: currentElapsed,
+          accumulatedSeconds: currentElapsed,
+          startTimestamp: undefined,
+        };
+      } else {
+        // Resuming
+        return {
+          ...prev,
+          isRunning: true,
+          startTimestamp: now,
+          accumulatedSeconds: prev.elapsedSeconds,
+        };
+      }
+    });
+  }, []);
+
+  const handleExtendStopwatch = useCallback(
+    (extraMinutes: number) => {
+      stopAlarmSound();
+      stopAlarmTitleFlashing();
+      setIsAlarmPlaying(false);
+      setIsTimeUpModalOpen(false);
+      hasWarned60sRef.current = false;
+
+      setActiveStopwatch((prev) => {
+        if (!prev) return null;
+        const now = Date.now();
+        return {
+          ...prev,
+          targetSeconds: prev.targetSeconds + extraMinutes * 60,
+          isRunning: true,
+          startTimestamp: now,
+          accumulatedSeconds: prev.elapsedSeconds,
+          extendedTimes: (prev.extendedTimes || 0) + 1,
+        };
+      });
+
+      speakText(
+        `Focus time extended by ${extraMinutes} minutes. Keep going!`,
+        settings.voiceMuted
+      );
+    },
+    [settings.voiceMuted]
+  );
+
+  const handleContinueUncapped = useCallback(() => {
+    stopAlarmSound();
+    stopAlarmTitleFlashing();
+    setIsAlarmPlaying(false);
+    setIsTimeUpModalOpen(false);
+    setActiveStopwatch((prev) => {
+      if (!prev) return null;
+      const now = Date.now();
+      return {
+        ...prev,
+        mode: 'stopwatch',
+        isRunning: true,
+        startTimestamp: now,
+        accumulatedSeconds: prev.elapsedSeconds,
+      };
+    });
+  }, []);
+
+  const handleCompleteFromStopwatch = useCallback(
+    (taskId: string, elapsedSeconds: number) => {
+      stopAlarmSound();
+      stopAlarmTitleFlashing();
+      setIsAlarmPlaying(false);
+      setIsTimeUpModalOpen(false);
+      setActiveStopwatch(null);
+      saveActiveStopwatch(null);
+
+      const target = tasks.find((t) => t.id === taskId);
+      const updatedList = tasks.map((t) => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            completed: true,
+            completedAt: new Date().toISOString(),
+            timeSpentSeconds: (t.timeSpentSeconds || 0) + elapsedSeconds,
+          };
+        }
+        return t;
+      });
+
+      updateTasks(updatedList);
+      playCompleteSound(settings.soundEnabled);
+
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.8 },
+          colors: ['#10b981', '#6366f1', '#f59e0b'],
+        });
+      } catch {
+        // ignore
+      }
+
+      speakText(
+        `Awesome work! ${target ? target.title : 'Task'} marked as done and logged to your day's history.`,
+        settings.voiceMuted
+      );
+    },
+    [tasks, updateTasks, settings.soundEnabled, settings.voiceMuted]
+  );
+
+  const handleStopIncompleteStopwatch = useCallback(
+    (taskId: string, elapsedSeconds: number) => {
+      stopAlarmSound();
+      stopAlarmTitleFlashing();
+      setIsAlarmPlaying(false);
+      setIsTimeUpModalOpen(false);
+      setActiveStopwatch(null);
+      saveActiveStopwatch(null);
+
+      const updatedList = tasks.map((t) => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            timeSpentSeconds: (t.timeSpentSeconds || 0) + elapsedSeconds,
+          };
+        }
+        return t;
+      });
+
+      updateTasks(updatedList);
+      speakText('Focus session ended. Time recorded in task history.', settings.voiceMuted);
+    },
+    [tasks, updateTasks, settings.voiceMuted]
+  );
+
   // Periodic Reminder Checker
   useEffect(() => {
     const interval = setInterval(() => {
-      const firedIds = checkTaskReminders(tasks);
+      const firedIds = checkTaskReminders(tasks, {
+        readOutLoud: settings.readOutLoudReminders !== false,
+        voiceMuted: settings.voiceMuted,
+        speechRate: settings.spokenReminderVoiceSpeed || 1.0,
+      });
       if (firedIds.length > 0) {
         const updated = tasks.map((t) => {
           if (firedIds.includes(t.id) && t.reminder) {
@@ -172,10 +560,16 @@ export default function App() {
         });
         updateTasks(updated);
       }
-    }, 25000);
+    }, 15000);
 
     return () => clearInterval(interval);
-  }, [tasks, updateTasks]);
+  }, [
+    tasks,
+    updateTasks,
+    settings.readOutLoudReminders,
+    settings.voiceMuted,
+    settings.spokenReminderVoiceSpeed,
+  ]);
 
   // Keyboard Shortcuts Handler
   useEffect(() => {
@@ -636,6 +1030,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-50/70 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex flex-col md:flex-row transition-colors duration-200">
+      {/* Offline Status Badge */}
+      <OfflineIndicator />
+
       {/* Login Screen if not authenticated */}
       {!isAuthenticated && (
         <LoginModal
@@ -672,7 +1069,12 @@ export default function App() {
           voiceMuted={settings.voiceMuted}
           onToggleVoiceMute={handleToggleVoiceMute}
           onOpenVoiceAssistant={() => setIsVoiceAssistantOpen(true)}
+          onOpenReminders={() => setIsRemindersPopupOpen(true)}
+          pendingRemindersCount={pendingCount}
         />
+
+        {/* Mobile PWA Install Banner */}
+        <MobileAppBanner />
 
         {/* Dynamic Views Container */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
@@ -688,6 +1090,7 @@ export default function App() {
               onOpenNewNote={handleOpenNewNote}
               onNavigate={setCurrentView}
               onOpenVoiceAssistant={() => setIsVoiceAssistantOpen(true)}
+              onStartStopwatch={handleOpenStartStopwatch}
             />
           )}
 
@@ -700,7 +1103,12 @@ export default function App() {
               onQuickAddTask={handleQuickAddTask}
               onReorderTasks={updateTasks}
               onOpenNewTaskModal={() => handleOpenNewTask()}
+              onStartStopwatch={handleOpenStartStopwatch}
             />
+          )}
+
+          {currentView === 'targets' && (
+            <TargetGoalsView onStartStopwatch={handleOpenStartStopwatch} />
           )}
 
           {currentView === 'calendar' && (
@@ -736,7 +1144,22 @@ export default function App() {
             />
           )}
 
-          {currentView === 'productivity' && <ProductivityView tasks={tasks} />}
+          {currentView === 'whiteboard' && <WhiteboardView />}
+
+          {currentView === 'ideaplanner' && (
+            <IdeaPlannerView onOpenWhiteboard={() => setCurrentView('whiteboard')} />
+          )}
+
+          {currentView === 'productivity' && (
+            <ProductivityView
+              tasks={tasks}
+              onToggleTask={handleToggleTask}
+              onEditTask={handleOpenEditTask}
+              onDeleteTask={handleDeleteTask}
+            />
+          )}
+
+          {currentView === 'rules' && <RulesView />}
 
           {currentView === 'settings' && (
             <SettingsView
@@ -761,6 +1184,7 @@ export default function App() {
         currentView={currentView}
         onSelectView={setCurrentView}
         pendingCount={pendingCount}
+        onOpenNewTask={() => handleOpenNewTask()}
       />
 
       {/* Command Palette Menu */}
@@ -795,6 +1219,7 @@ export default function App() {
         initialTime={initialTaskTime}
         onSave={handleSaveTask}
         onDelete={handleDeleteTask}
+        onStartStopwatch={handleOpenStartStopwatch}
       />
 
       {/* Sticky Note Modal */}
@@ -843,8 +1268,63 @@ export default function App() {
         onExecuteAction={handleExecuteVoiceAction}
       />
 
-      {/* In-app Toast for active reminders */}
-      <InAppToast onOpenTask={handleOpenEditTask} />
+      {/* Interactive Spoken Reminders & Notifications Banner */}
+      <NotificationBanner
+        onStartFocus={handleOpenStartStopwatch}
+        onOpenTask={handleOpenEditTask}
+        onOpenReminders={() => setIsRemindersPopupOpen(true)}
+        speechRate={settings.spokenReminderVoiceSpeed || 1.0}
+        voiceMuted={settings.voiceMuted || settings.readOutLoudReminders === false}
+      />
+
+      {/* Reminders & Upcoming Popup with Audio Readout of Pending Tasks */}
+      <RemindersPopup
+        isOpen={isRemindersPopupOpen}
+        onClose={() => setIsRemindersPopupOpen(false)}
+        tasks={tasks}
+        onOpenTask={handleOpenEditTask}
+        onToggleTask={handleToggleTask}
+        voiceMuted={settings.voiceMuted}
+        onToggleMute={handleToggleVoiceMute}
+      />
+
+      {/* Floating Active Task Stopwatch Widget */}
+      <TaskStopwatchBar
+        stopwatch={activeStopwatch}
+        onTogglePause={handleToggleStopwatchPause}
+        onExtend={handleExtendStopwatch}
+        onComplete={handleCompleteFromStopwatch}
+        onStop={handleStopIncompleteStopwatch}
+        onOpenDetail={() => {
+          const t = tasks.find((x) => x.id === activeStopwatch?.taskId);
+          if (t) handleOpenEditTask(t);
+        }}
+      />
+
+      {/* Task Time-Up Alarm & Work Completion Modal */}
+      <TaskTimeUpModal
+        isOpen={isTimeUpModalOpen}
+        taskTitle={activeStopwatch?.taskTitle || ''}
+        taskId={activeStopwatch?.taskId || ''}
+        elapsedSeconds={activeStopwatch?.elapsedSeconds || 0}
+        isAlarmPlaying={isAlarmPlaying}
+        onSilenceAlarm={handleSilenceAlarm}
+        onMarkDone={handleCompleteFromStopwatch}
+        onExtend={handleExtendStopwatch}
+        onContinueUncapped={handleContinueUncapped}
+        onStopIncomplete={handleStopIncompleteStopwatch}
+      />
+
+      {/* Setup Modal for Starting Task Stopwatch / Timer */}
+      <StartTaskStopwatchModal
+        isOpen={isStartStopwatchModalOpen}
+        onClose={() => {
+          setIsStartStopwatchModalOpen(false);
+          setStopwatchTask(null);
+        }}
+        task={stopwatchTask}
+        onStart={handleStartStopwatch}
+      />
     </div>
   );
 }

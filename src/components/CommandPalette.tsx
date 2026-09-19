@@ -103,6 +103,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     const navs: { id: ViewType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
       { id: 'dashboard', label: 'Dashboard', icon: ArrowRight },
       { id: 'tasks', label: 'Tasks List', icon: CheckSquare },
+      { id: 'targets', label: 'Target Goals & Milestones', icon: ArrowRight },
+      { id: 'rules', label: 'Work & Focus Rules', icon: ArrowRight },
+      { id: 'whiteboard', label: 'Ideation Whiteboard', icon: ArrowRight },
+      { id: 'ideaplanner', label: 'Idea Planner & Bug Notes', icon: ArrowRight },
       { id: 'calendar', label: 'Calendar View', icon: Calendar },
       { id: 'planner', label: 'Time Planner', icon: Clock },
       { id: 'notes', label: 'Sticky Notes Board', icon: StickyNoteIcon },

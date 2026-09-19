@@ -1,6 +1,6 @@
 {
   "name": "Personal Productivity Suite",
-  "description": "Modern personal productivity workspace combining Todo List, Calendar, Time Planner, and Sticky Notes.",
+  "description": "Comprehensive productivity workspace featuring a Target Goals roadmap with sequential step timing, active progress beacon indicating where you completed up to, embedded goal sticky notes, work rules compliance, task stopwatch with pre-completion alerts & alarm, day-by-day history, and ideation whiteboard.",
   "requestFramePermissions": [
     "microphone"
   ],

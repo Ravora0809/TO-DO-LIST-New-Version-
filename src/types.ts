@@ -35,6 +35,8 @@ export interface Task {
   reminder?: ReminderConfig;
   recurring?: RecurringConfig;
   order: number;
+  timeSpentSeconds?: number;
+  estimatedMinutes?: number;
 }
 
 export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'orange' | 'purple';
@@ -57,11 +59,86 @@ export interface StickyNote {
 export type ViewType =
   | 'dashboard'
   | 'tasks'
+  | 'targets'
+  | 'rules'
   | 'calendar'
   | 'planner'
   | 'notes'
+  | 'whiteboard'
+  | 'ideaplanner'
   | 'productivity'
   | 'settings';
+
+// -------------------------------------------------------------
+// Target & Goal Tracking Types
+// -------------------------------------------------------------
+export interface GoalStep {
+  id: string;
+  title: string;
+  description?: string;
+  targetDate?: string; // YYYY-MM-DD
+  targetTime?: string; // HH:mm
+  estimatedHours?: number;
+  actualHoursSpent?: number;
+  completed: boolean;
+  completedAt?: string;
+  order: number;
+  notes?: string;
+}
+
+export interface GoalStickyNote {
+  id: string;
+  content: string;
+  color: 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
+  createdAt: string;
+  pinned?: boolean;
+}
+
+export interface TargetGoal {
+  id: string;
+  title: string;
+  tagline?: string;
+  category: string; // 'Career' | 'Health' | 'Finance' | 'Learning' | 'Personal' | 'Project'
+  priority: Priority;
+  targetDate: string; // YYYY-MM-DD
+  startDate?: string; // YYYY-MM-DD
+  status: 'not_started' | 'in_progress' | 'completed' | 'on_hold';
+  steps: GoalStep[];
+  stickyNotes: GoalStickyNote[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface ActiveStopwatchState {
+  taskId: string;
+  taskTitle: string;
+  taskCategory: string;
+  mode: 'countdown' | 'stopwatch';
+  targetSeconds: number; // e.g. 1500 for 25m
+  elapsedSeconds: number;
+  isRunning: boolean;
+  warningTriggered?: boolean;
+  completedTriggered?: boolean;
+  startedAt: string;
+  extendedTimes?: number;
+  startTimestamp?: number; // Wall-clock timestamp in ms when current running segment started
+  accumulatedSeconds?: number; // Base seconds elapsed accumulated prior to current running segment
+}
+
+export type RuleCategory = 'Focus & Time' | 'Execution & Quality' | 'Habits & Mindset' | 'Environment';
+
+export interface WorkRule {
+  id: string;
+  title: string;
+  description: string;
+  category: RuleCategory;
+  strictness: 'mandatory' | 'recommended' | 'best-practice';
+  icon?: string;
+  isCustom?: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
 
 export type CalendarViewMode = 'month' | 'week' | 'day';
 
@@ -79,6 +156,8 @@ export interface UserSettings {
   voiceAssistantEnabled: boolean;
   voiceMuted: boolean;
   autoGreetOnOpen: boolean;
+  readOutLoudReminders?: boolean;
+  spokenReminderVoiceSpeed?: number;
 }
 
 export interface VoiceAssistantAction {
@@ -111,3 +190,184 @@ export interface TaskFilterOptions {
   scheduled: 'all' | 'scheduled' | 'unscheduled';
   searchQuery: string;
 }
+
+// -------------------------------------------------------------
+// Whiteboard Types
+// -------------------------------------------------------------
+export type WhiteboardElementType =
+  | 'rectangle'
+  | 'rounded-rect'
+  | 'circle'
+  | 'triangle'
+  | 'polygon'
+  | 'star'
+  | 'diamond'
+  | 'cylinder'
+  | 'cloud'
+  | 'sticky'
+  | 'text'
+  | 'arrow'
+  | 'line'
+  | 'draw'
+  | 'marker'
+  | 'image'
+  | 'comment'
+  | 'connector'
+  | 'frame'
+  | 'icon';
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface WhiteboardElement {
+  id: string;
+  type: WhiteboardElementType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number; // degrees 0-360
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+  opacity?: number; // 0 to 1
+  cornerRadius?: number;
+  text?: string;
+  textColor?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline';
+  textAlign?: 'left' | 'center' | 'right';
+  arrowStart?: 'none' | 'arrow' | 'dot';
+  arrowEnd?: 'none' | 'arrow' | 'dot' | 'triangle';
+  iconName?: string;
+  iconCategory?: string;
+  points?: Point[];
+  imageSrc?: string;
+  commentAuthor?: string;
+  commentTime?: string;
+  commentResolved?: boolean;
+  locked?: boolean;
+  hidden?: boolean;
+  name?: string;
+  groupId?: string;
+  colorPreset?: string;
+  zIndex: number;
+}
+
+export type WhiteboardTool =
+  | 'select'
+  | 'hand'
+  | 'rectangle'
+  | 'rounded-rect'
+  | 'circle'
+  | 'triangle'
+  | 'polygon'
+  | 'star'
+  | 'diamond'
+  | 'cylinder'
+  | 'cloud'
+  | 'arrow'
+  | 'line'
+  | 'draw'
+  | 'marker'
+  | 'text'
+  | 'sticky'
+  | 'image'
+  | 'comment'
+  | 'connector'
+  | 'frame'
+  | 'laser'
+  | 'icon'
+  | 'eraser';
+
+export interface WhiteboardBoard {
+  id: string;
+  name: string;
+  description?: string;
+  elements: WhiteboardElement[];
+  gridMode: 'dots' | 'lines' | 'none';
+  snapToGrid?: boolean;
+  gridSize?: number;
+  showMinimap?: boolean;
+  bgColor: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// -------------------------------------------------------------
+// Idea Planner & Project Lifecycle Types (SRS to Prototype & Beyond)
+// -------------------------------------------------------------
+export type ProjectStageId =
+  | 'srs'
+  | 'architecture'
+  | 'wireframe'
+  | 'prototype'
+  | 'development'
+  | 'testing'
+  | 'deployment';
+
+export type StageStatus = 'not_started' | 'in_progress' | 'completed' | 'blocked';
+
+export interface MilestoneItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  notes?: string;
+  dueDate?: string;
+}
+
+export interface ProjectStage {
+  id: ProjectStageId;
+  name: string;
+  shortName: string;
+  stepNumber: number;
+  description: string;
+  status: StageStatus;
+  items: MilestoneItem[];
+  notes: string;
+  keyDeliverables?: string[];
+}
+
+export interface ProjectIdea {
+  id: string;
+  title: string;
+  tagline: string;
+  category: string;
+  priority: Priority;
+  targetDate?: string;
+  problemStatement: string;
+  targetAudience: string;
+  currentStage: ProjectStageId;
+  stages: ProjectStage[];
+  whiteboardId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// -------------------------------------------------------------
+// Bug Fixing & Issue Notes Types
+// -------------------------------------------------------------
+export type BugSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type BugStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+export interface ProjectBug {
+  id: string;
+  projectId: string; // Associated ProjectIdea id
+  title: string;
+  description: string;
+  stageFound: ProjectStageId;
+  severity: BugSeverity;
+  status: BugStatus;
+  stepsToReproduce?: string;
+  rootCause?: string;
+  fixNotes?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+

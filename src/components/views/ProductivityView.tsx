@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   CheckCircle2,
   TrendingUp,
@@ -8,14 +8,26 @@ import {
   PieChart,
   Calendar,
   Layers,
+  History,
+  Timer,
 } from 'lucide-react';
 import { Task } from '../../types';
+import { DayByDayHistoryView } from './DayByDayHistoryView';
 
 interface ProductivityViewProps {
   tasks: Task[];
+  onToggleTask?: (taskId: string) => void;
+  onEditTask?: (task: Task) => void;
+  onDeleteTask?: (taskId: string) => void;
 }
 
-export const ProductivityView: React.FC<ProductivityViewProps> = ({ tasks }) => {
+export const ProductivityView: React.FC<ProductivityViewProps> = ({
+  tasks,
+  onToggleTask,
+  onEditTask,
+  onDeleteTask,
+}) => {
+  const [activeTab, setActiveTab] = useState<'analytics' | 'day_by_day'>('analytics');
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((t) => t.completed).length;
   const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
@@ -113,8 +125,48 @@ export const ProductivityView: React.FC<ProductivityViewProps> = ({ tasks }) => 
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto select-none">
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* View Switcher: Analytics vs Day-by-Day History */}
+      <div className="flex items-center justify-between gap-4 pb-1">
+        <div className="flex items-center gap-1 p-1 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 border border-neutral-200/60 dark:border-neutral-700/60">
+          <button
+            type="button"
+            onClick={() => setActiveTab('analytics')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'analytics'
+                ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5 text-neutral-700 dark:text-neutral-300" />
+            <span>Productivity Analytics</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('day_by_day')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              activeTab === 'day_by_day'
+                ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+            }`}
+          >
+            <History className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Day-by-Day History</span>
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'day_by_day' ? (
+        <DayByDayHistoryView
+          tasks={tasks}
+          onToggleTask={onToggleTask || (() => {})}
+          onEditTask={onEditTask || (() => {})}
+          onDeleteTask={onDeleteTask}
+          onNavigateToTasks={() => setActiveTab('analytics')}
+        />
+      ) : (
+        <>
+          {/* Overview Stat Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Completion % */}
         <div className="p-5 rounded-2xl bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-800/80 shadow-xs">
           <div className="flex items-center justify-between text-xs font-medium text-neutral-500 dark:text-neutral-400">
@@ -286,6 +338,8 @@ export const ProductivityView: React.FC<ProductivityViewProps> = ({ tasks }) => 
           })}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };
